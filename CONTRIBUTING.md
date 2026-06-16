@@ -1,0 +1,190 @@
+# Contributor's guide
+
+## Commit signing
+
+Enable [commit signing](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits)
+
+```sh
+git config commit.gpgsign true
+```
+
+## Documentation
+
+Unified project documentation is available at https://nethermindeth.github.io/stellar-private-payments/docs/
+
+## Communication and environment notes
+
+- External contributors should mention their PR in the project [LinkedIn group](https://www.linkedin.com/groups/18809039/). PRs from forks are not reviewed without this notice because we need to see a human behind the contribution.
+- Active development discussions happen in the [Telegram group](https://t.me/stellar_privacy). If you have technical questions you should ask them there.
+- You may need to reset local browser storage from time to time. [Bootnode](https://github.com/NethermindEth/stellar-private-payments/issues/169) support is not available yet, and contracts are redeployed during development.
+
+## Project Structure
+
+```
+stellar-private-payments/
+├── app/                        # Application (see app/README.md, app/ARCHITECTURE.md)
+│   ├── crates/
+│   │   ├── core/               # Platform-agnostic Rust logic (storage, prover flows, indexer, types, witness)
+│   │   │   ├── prover/
+│   │   │   ├── state/
+│   │   │   ├── stellar/
+│   │   │   ├── types/
+│   │   │   └── witness/
+│   │   └── platforms/
+│   │       └── web/            # WASM entrypoint + WebClient (sign/submit in sign.rs)
+│   ├── js/                     # JavaScript frontend code (web interface)
+│   │   ├── ui/                 # UI components
+│   │   ├── admin.js            # Admin UI entry
+│   │   ├── ui.js               # Main UI entry
+│   │   ├── wallet.js           # Freighter integration + WASM signing bridge
+│   │   └── wasm-facade.js      # Thin wrapper over WASM exports
+│   ├── index.html              # Main web application entry
+│   └── admin.html              # Admin entry
+├── circuits/                   # Circom ZK circuits
+│   ├── src/
+│   │   ├── poseidon2/          # Poseidon2 hash circuits
+│   │   ├── smt/                # Sparse Merkle tree circuits
+│   │   ├── test/               # Circuit test utilities
+│   │   ├── policyTransaction.circom  # Main transaction circuit
+│   │   └── *.circom            # Supporting circuits
+│   └── build.rs                # Circuit compilation build script
+├── circuit-keys/               # Helpers to convert snarkjs keys to Arkworks
+├── contracts/                  # Soroban smart contracts
+│   ├── asp-membership/         # ASP membership Merkle tree
+│   ├── asp-non-membership/     # ASP non-membership sparse Merkle tree
+│   ├── circom-groth16-verifier/# On-chain Groth16 proof verifier
+│   ├── pool/                   # Main privacy pool contract
+│   ├── soroban-utils/          # Shared utilities (Poseidon2, etc.)
+│   └── types/                  # Shared contract types
+├── e2e-tests/                  # End-to-end integration tests
+├── poseidon2/                  # Poseidon2 hash implementation
+├── deployments/                # Deployment and utility scripts
+├── dist/                       # Built static site output (generated)
+└── Makefile                    # Build automation
+```
+
+## Prerequisites
+
+- [**Rust**](https://www.rust-lang.org/tools/install) 1.92.0 or later (see `rust-toolchain.toml`).
+- [**Circom**](https://github.com/iden3/circom) 2.2.2 or later for circuit compilation.
+- [**Stellar CLI**](https://github.com/stellar/stellar-cli) for contract deployment.
+- [**Node.js**](https://github.com/nodejs/node) for frontend dependencies.
+- [**Trunk**](https://github.com/trunk-rs/trunk) for serving the web application.
+- [**Cargo Deny**](https://github.com/EmbarkStudios/cargo-deny)
+- [**Typos**](https://github.com/crate-ci/typos?tab=readme-ov-file#install)
+- [**Cargo Sort**](https://github.com/DevinR528/cargo-sort)
+- SQLite development libraries (e.g. for Debian/Ubuntu `sudo apt install libsqlite3-dev`)
+- [**wasm-bindgen-cli**](https://crates.io/crates/wasm-bindgen-cli) (provides `wasm-bindgen-test-runner` for `cargo test --target wasm32-unknown-unknown`)
+- [**wasm-pack**](https://rustwasm.github.io/wasm-pack/) for WASM bundling
+
+## Building and testing crates
+
+### Patches
+
+`ark-circom` is [patched](https://github.com/NethermindEth/circom-compat/commits/wasm-no-parallel/) 
+(`Cargo.toml` is cleaned up from hardcoded `parallel` features) to allow running 
+in a single-threaded WASM - we don't want for now to enable multithreaded wasm support as the proving time is acceptable
+while wasm multithreading requires COOP/COEP headers and is much stricter to deploy.
+Also we delete `ethereum.rs` module to get rid of many irrelevant dependencies.
+`vendor/cranelift-control` is patched - the single dependency `arbitrary` is fixed at the same version as in 
+the `soroban-sdk` - see https://github.com/NethermindEth/stellar-private-payments/issues/192.
+
+### Running WASM tests
+
+Some crates include unit tests intended to run under `wasm32-unknown-unknown` via `wasm-bindgen-test`.
+The workspace is configured to use `wasm-bindgen-test-runner` as the wasm test runner (see `.cargo/config.toml`),
+so you need it available on your `PATH` (typically by installing `wasm-bindgen-cli`).
+
+```bash
+# Install a compatible wasm-bindgen toolchain (adjust the version if `Cargo.lock` changes)
+cargo install wasm-bindgen-cli --version 0.2.120
+
+# Example: run wasm tests for the Stellar core crate
+cargo test --target wasm32-unknown-unknown -p stellar
+```
+
+### Building Circuits
+To explicitly build them:
+
+```bash
+# Build circuits
+cargo build -p circuits
+```
+
+The circuit crate also exposes 2 flags:
+- **BUILD_TESTS**: Builds the circom test circuits. Most Circom circuits simply define a template. And if you want to use it or test it, you need to instantiate it with some specific parameters.
+For efficiency, the compilation of these circuits test is gatekeeped behind this flag. When enabled, if the verifying keys are not in `testdata`, it will generate them. Deployed testnet keys are committed under `deployments/testnet/circuit_keys`.
+- **REGEN_KEYS**: Forces the generation of new verification keys, even if they already exist.
+
+Also, for efficiency reasons, some tests are ignored by default. To run them:
+```bash
+# Test circuits requires the flag to be enabled
+BUILD_TESTS=1 cargo test -p circuits -- --ignored
+```
+### Building Contracts
+
+```bash
+# Build all contracts
+stellar contract build --manifest-path Cargo.toml --out-dir target/stellar --optimize --package pool
+stellar contract build --manifest-path Cargo.toml --out-dir target/stellar --optimize --package asp-membership
+stellar contract build --manifest-path Cargo.toml --out-dir target/stellar --optimize --package asp-non-membership
+stellar contract build --manifest-path Cargo.toml --out-dir target/stellar --optimize --package circom-groth16-verifier
+
+# Or use the deployment script which builds automatically
+./deployments/scripts/deploy.sh --help
+```
+
+### Deploying Contracts
+You can use the script `deployments/scripts/deploy.sh` to deploy contracts to a Stellar network.
+
+See `./deployments/scripts/deploy.sh --help` for all options.
+
+For testnet purposes
+(https://www.circle.com/eurc#how-to-start-using-eurc, you can use https://faucet.circle.com/ to fund your account (but first add an asset and a trustline in your wallet))
+
+```sh
+./deployments/scripts/deploy.sh testnet \
+  --deployer <identity> \
+  --asp-levels 10 \
+  --pool-levels 10 \
+  --max-deposit 1000000000 \
+  --vk-file deployments/testnet/circuit_keys/policy_tx_2_2_vk.json \
+  --pool native:$(stellar contract id asset --asset native --network testnet) \
+  --pool classic:EURC:GB3Q6QDZYTHWT7E5PVS3W7FUT5GVAFC5KSZFFLPU25GO7VTC3NM2ZTVO:$(stellar contract id asset --asset EURC:GB3Q6QDZYTHWT7E5PVS3W7FUT5GVAFC5KSZFFLPU25GO7VTC3NM2ZTVO --network testnet)
+```
+
+### End-to-End Tests
+
+The E2E tests generate real Groth16 proofs and verify them, locally, using contracts and the Soroban-SDK. To run them:
+```bash
+cargo test -p e2e-tests
+```
+
+## Code quality assurance
+
+Install a pre-push git hook:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+## App development
+
+### Prerequisites
+
+* Node.js
+* npm
+* python3 (for the static server)
+
+The whole app:
+
+```sh
+$ make install
+$ make serve
+```
+
+Prepare a production build (TODO: enable optimizations and minification)
+
+```sh
+$ make dist
+```

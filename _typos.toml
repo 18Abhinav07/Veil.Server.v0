@@ -1,0 +1,17 @@
+[default]
+extend-ignore-re = [
+    "0x[0-9a-fA-F]+", # Hexadecimal numbers
+]
+
+[default.extend-words]
+nullifs = "nullifs"
+groth16 = "groth16"
+groth = "groth"
+consts = "consts"
+
+[files]
+ignore-hidden = true
+extend-exclude = [
+    "circuits/src/circomlib/",
+    "deployments/testnet/deployments.json",
+]
