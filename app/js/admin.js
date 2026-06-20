@@ -1,0 +1,560 @@
+import { contract } from '@stellar/stellar-sdk';
+import { initializeWasm, getHandle } from './wasm-facade.js';
+import { connectWallet, getWalletNetwork, signWalletAuthEntry, signWalletTransaction, signWalletMessage } from './wallet.js';
+import { isDbLockedError, showDbLockedModal } from './db-locked.js';
+
+// DOM element references
+const statusEl = document.getElementById('status');
+const logEl = document.getElementById('log');
+const networkChip = document.getElementById('networkChip');
+const walletChip = document.getElementById('walletChip');
+const connectBtn = document.getElementById('connectBtn');
+const refreshBtn = document.getElementById('refreshBtn');
+
+const toastContainer = document.getElementById('toast-container');
+const toastTemplate = document.getElementById('tpl-toast');
+
+// Contract/state display
+const membershipContractInput = document.getElementById('membershipContract');
+const nonMembershipContractInput = document.getElementById('nonMembershipContract');
+const membershipRootEl = document.getElementById('membershipRoot');
+const membershipLevelsEl = document.getElementById('membershipLevels');
+const membershipNextIndexEl = document.getElementById('membershipNextIndex');
+const nonMembershipRootEl = document.getElementById('nonMembershipRoot');
+
+// Membership leaf builder inputs
+const publicKeyInput = document.getElementById('publicKey');
+const blindingInput = document.getElementById('blinding');
+const computeMembershipLeafBtn = document.getElementById('computeMembershipLeafBtn');
+const useMembershipLeafBtn = document.getElementById('useMembershipLeafBtn');
+const derivedPubKeyEl = document.getElementById('derivedPubKey');
+const computedMembershipLeafHexEl = document.getElementById('computedMembershipLeafHex');
+const computedMembershipLeafDecEl = document.getElementById('computedMembershipLeafDec');
+const membershipLeafInput = document.getElementById('membershipLeafInput');
+const insertMembershipLeafBtn = document.getElementById('insertMembershipLeafBtn');
+
+// Admin insert only toggle
+const adminInsertOnlyStatusEl = document.getElementById('adminInsertOnlyStatus');
+const toggleAdminInsertOnlyBtn = document.getElementById('toggleAdminInsertOnlyBtn');
+const openInsertWarningEl = document.getElementById('openInsertWarning');
+
+// Non-membership leaf builder inputs
+const blockedKeyInput = document.getElementById('blockedKey');
+const blockedValueInput = document.getElementById('blockedValue');
+const valueSameCheckbox = document.getElementById('valueSame');
+const computeNonMembershipLeafBtn = document.getElementById('computeNonMembershipLeafBtn');
+const computedNonMembershipLeafHexEl = document.getElementById('computedNonMembershipLeafHex');
+const insertNonMembershipLeafBtn = document.getElementById('insertNonMembershipLeafBtn');
+
+// Non-membership leaf removal inputs
+const removeNonMembershipKeyInput = document.getElementById('removeNonMembershipKey');
+const removeNonMembershipLeafBtn = document.getElementById('removeNonMembershipLeafBtn');
+
+const state = {
+  address: null,
+  networkPassphrase: null,
+  rpcUrl: null,
+  contracts: null,
+  membershipClient: null,
+  nonMembershipClient: null,
+  membershipClientId: null,
+  nonMembershipClientId: null,
+  cryptoReady: false,
+  adminInsertOnly: null,
+  computedMembershipLeaf: null,
+};
+
+const statusBaseClass = statusEl ? statusEl.className : '';
+
+const STATUS_STYLES = {
+  info: '',
+  ok: 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300',
+  error: 'bg-rose-500/10 border-rose-500/40 text-rose-300',
+};
+
+// Update status banner text + color
+function setStatus(text, kind = 'info') {
+  if (!statusEl) return;
+  statusEl.textContent = text;
+  const classes = STATUS_STYLES[kind] || STATUS_STYLES.info;
+  statusEl.className = `${statusBaseClass} ${classes}`.trim();
+}
+
+// Append timestamped log entry
+function log(message) {
+  if (!logEl) return;
+  const time = new Date().toISOString().slice(11, 19);
+  logEl.textContent += `[${time}] ${message}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function shortAddress(address) {
+  if (!address) return 'Disconnected';
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+// Toast notification system
+function showToast(message, type = 'success', duration = 4000) {
+  if (!toastContainer || !toastTemplate) return;
+  const toast = toastTemplate.content.cloneNode(true).firstElementChild;
+
+  toast.querySelector('.toast-message').textContent = message;
+
+  const isSuccess = type === 'success';
+  toast.querySelector('.toast-icon-success').classList.toggle('hidden', !isSuccess);
+  toast.querySelector('.toast-icon-error').classList.toggle('hidden', isSuccess);
+  toast.classList.add(isSuccess ? 'border-emerald-500/50' : 'border-red-500/50');
+
+  toast.querySelector('.toast-close').addEventListener('click', () => toast.remove());
+
+  toastContainer.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(100%)';
+    setTimeout(() => toast.remove(), 200);
+  }, duration);
+}
+
+// -----------------------------
+// Parsing & conversion helpers
+// -----------------------------
+
+// Parse user input into a non-negative BigInt (hex or decimal)
+function parseBigIntInput(value, label) {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = BigInt(trimmed);
+    if (parsed < 0n) {
+      throw new Error('negative');
+    }
+    return parsed;
+  } catch (err) {
+    throw new Error(`${label} must be a hex or decimal integer`);
+  }
+}
+
+// -----------------------------
+// Wallet & signer helpers
+// -----------------------------
+
+function ensureWalletConnected() {
+  if (!state.address) {
+    throw new Error('Connect wallet first');
+  }
+}
+
+// Build Soroban-compatible signer wrapper around wallet functions
+function buildSigner() {
+  return {
+    signTransaction: async (transactionXdr, opts = {}) => {
+      return signWalletTransaction(transactionXdr, {
+        networkPassphrase: state.networkPassphrase,
+        address: state.address,
+        ...opts,
+      });
+    },
+    signAuthEntry: async (entryXdr, opts = {}) => {
+      return signWalletAuthEntry(entryXdr, {
+        networkPassphrase: state.networkPassphrase,
+        address: state.address,
+        ...opts,
+      });
+    },
+  };
+}
+
+// -----------------------------
+// Contract client factories
+// -----------------------------
+
+async function getMembershipClient(contractId) {
+  if (state.membershipClient && state.membershipClientId === contractId) {
+    return state.membershipClient;
+  }
+  const signer = buildSigner();
+  state.membershipClient = await contract.Client.from({
+    rpcUrl: state.rpcUrl,
+    networkPassphrase: state.networkPassphrase,
+    publicKey: state.address,
+    signTransaction: signer.signTransaction,
+    signAuthEntry: signer.signAuthEntry,
+    contractId,
+  });
+  state.membershipClientId = contractId;
+  return state.membershipClient;
+}
+
+async function getNonMembershipClient(contractId) {
+  if (state.nonMembershipClient && state.nonMembershipClientId === contractId) {
+    return state.nonMembershipClient;
+  }
+  const signer = buildSigner();
+  state.nonMembershipClient = await contract.Client.from({
+    rpcUrl: state.rpcUrl,
+    networkPassphrase: state.networkPassphrase,
+    publicKey: state.address,
+    signTransaction: signer.signTransaction,
+    signAuthEntry: signer.signAuthEntry,
+    contractId,
+  });
+  state.nonMembershipClientId = contractId;
+  return state.nonMembershipClient;
+}
+
+// Initialize WASM prover / crypto primitives
+async function ensureCryptoReady() {
+  if (!state.cryptoReady) {
+    setStatus('Loading cryptography...', 'info');
+    const { sorobanRpcUrl, ...network } = await getWalletNetwork();
+    try {
+      await initializeWasm(sorobanRpcUrl);
+    } catch (e) {
+      if (isDbLockedError(e?.message)) showDbLockedModal(e.message);
+      throw e;
+    }
+    state.cryptoReady = true;
+    setStatus('Cryptography ready', 'ok');
+  }
+}
+
+// -----------------------------
+// Wallet & network actions
+// -----------------------------
+
+async function connect() {
+  try {
+    setStatus('Connecting wallet...', 'info');
+    const address = await connectWallet();
+    const net = await getWalletNetwork();
+    state.address = address;
+    state.networkPassphrase = net.networkPassphrase;
+    state.rpcUrl = net.sorobanRpcUrl || 'https://soroban-testnet.stellar.org';
+
+    // Update wallet button to show connected state
+    walletChip.textContent = shortAddress(address);
+    networkChip.textContent = net.network || 'Testnet';
+    connectBtn.classList.remove('bg-dark-800', 'hover:bg-dark-700');
+    connectBtn.classList.add('bg-brand-500/10', 'border-brand-500/30', 'text-brand-400');
+
+    // Invalidate contract clients (new account may have different auth)
+    state.membershipClient = null;
+    state.nonMembershipClient = null;
+
+    // Re-evaluate UI gating now that we have an address.
+    // The toggle button is disabled when `state.address` is missing.
+    updateAdminInsertOnlyDisplay(state.adminInsertOnly);
+
+    setStatus('Wallet connected', 'ok');
+    log(`Wallet connected: ${address}`);
+    showToast(`Connected: ${shortAddress(address)}`, 'success');
+
+  } catch (err) {
+    if (err.code === 'USER_REJECTED') {
+      setStatus('Connection cancelled', 'info');
+      log('Wallet connection cancelled by user');
+    } else {
+      setStatus('Wallet error', 'error');
+      log(`Wallet connection failed: ${err.message}`);
+      showToast('Wallet connection failed', 'error');
+    }
+  }
+}
+
+async function refreshState() {
+  try {
+    setStatus('Loading contract state...', 'info');
+    const client = getHandle().webClient;
+
+    const state = await client.aspState();
+    const membershipState = state.aspMembership;
+    const nonMembershipState = state.aspNonMembership;
+
+    if (membershipContractInput) {
+      membershipContractInput.value = membershipState.contractId;
+    }
+    if (nonMembershipContractInput) {
+      nonMembershipContractInput.value = nonMembershipState.contractId;
+    }
+
+    membershipRootEl.textContent = membershipState.root || '--';
+    membershipLevelsEl.textContent = membershipState.levels ?? '--';
+    membershipNextIndexEl.textContent = membershipState.nextIndex ?? '--';
+    updateAdminInsertOnlyDisplay(membershipState.adminInsertOnly);
+    nonMembershipRootEl.textContent = nonMembershipState.root || '--';
+
+    setStatus('State loaded', 'ok');
+  } catch (err) {
+    updateAdminInsertOnlyDisplay(undefined)
+    setStatus('State load error', 'error');
+    log(`State refresh failed: ${err.message}`);
+  }
+}
+
+// -----------------------------
+// Membership and non leaf computation
+// -----------------------------
+
+async function computeMembershipLeaf() {
+  try {
+    await ensureCryptoReady();
+    const blindingValue = parseBigIntInput(blindingInput.value, 'Blinding');
+    if (blindingValue === null) {
+      throw new Error('Blinding is required');
+    }
+
+    const publicOverride = parseBigIntInput(publicKeyInput.value, 'Public key');
+    if (publicOverride === null) {
+      throw new Error('User note public key is required');
+    }
+
+    const pubKey = '0x' + publicOverride.toString(16).padStart(64, '0');
+    const client = getHandle().webClient;
+    const leafHex = await client.deriveAspUserLeaf(blindingValue, pubKey);
+    const leafDec = BigInt(leafHex).toString();
+
+    derivedPubKeyEl.textContent = pubKey;
+    computedMembershipLeafHexEl.textContent = leafHex;
+    computedMembershipLeafDecEl.textContent = leafDec;
+
+    state.computedMembershipLeaf = {
+      leafHex,
+      leafDec,
+      leafBigInt: BigInt(leafHex)
+    };
+    useMembershipLeafBtn.disabled = false;
+    log('Computed membership leaf');
+  } catch (err) {
+    log(`Membership leaf error: ${err.message}`);
+  }
+}
+
+function useComputedMembershipLeaf() {
+  if (!state.computedMembershipLeaf) return;
+  membershipLeafInput.value = state.computedMembershipLeaf.leafHex;
+}
+
+async function insertMembershipLeaf() {
+  try {
+    ensureWalletConnected();
+    const contractId = membershipContractInput.value.trim();
+    if (!contractId) {
+      throw new Error('Membership contract ID is required');
+    }
+
+    let leafValue = parseBigIntInput(membershipLeafInput.value, 'Leaf');
+    if (leafValue === null && state.computedMembershipLeaf) {
+      leafValue = state.computedMembershipLeaf.leafBigInt;
+    }
+    if (leafValue === null) {
+      throw new Error('Leaf value is required');
+    }
+
+    setStatus('Submitting membership leaf...', 'info');
+    const client = await getMembershipClient(contractId);
+    const tx = await client.insert_leaf({ leaf: leafValue });
+    const sent = await tx.signAndSend();
+    log(`Membership leaf submitted: ${sent.sendTransactionResponse?.hash || 'ok'}`);
+    setStatus('Membership leaf sent', 'ok');
+    await refreshState();
+  } catch (err) {
+    setStatus('Membership insert failed', 'error');
+    log(`Membership insert error: ${err.message}`);
+  }
+}
+
+// Update the admin-insert-only status display and toggle button
+function updateAdminInsertOnlyDisplay(value) {
+  if (value === undefined || value === null) {
+    adminInsertOnlyStatusEl.textContent = '--';
+    toggleAdminInsertOnlyBtn.disabled = true;
+    openInsertWarningEl.classList.add('hidden');
+    return;
+  }
+  state.adminInsertOnly = value;
+  adminInsertOnlyStatusEl.textContent = value ? 'Enabled' : 'Disabled';
+  adminInsertOnlyStatusEl.className = value
+    ? 'text-xs font-mono text-emerald-400'
+    : 'text-xs font-mono text-amber-400';
+  toggleAdminInsertOnlyBtn.textContent = value ? 'Disable' : 'Enable';
+  toggleAdminInsertOnlyBtn.disabled = !state.address;
+  // Show warning when anyone can insert (admin-only is disabled)
+  openInsertWarningEl.classList.toggle('hidden', value);
+}
+
+async function toggleAdminInsertOnly() {
+  try {
+    ensureWalletConnected();
+    const contractId = membershipContractInput.value.trim();
+    if (!contractId) {
+      throw new Error('Membership contract ID is required');
+    }
+
+    if (state.adminInsertOnly === null || state.adminInsertOnly === undefined) {
+      throw new Error('Cannot toggle: admin-only insert state is unknown. Refresh contract state first.');
+    }
+    const currentValue = state.adminInsertOnly;
+    const newValue = !currentValue;
+
+    setStatus(
+      `Setting admin-only insert to ${newValue ? 'enabled' : 'disabled'}...`,
+      'info',
+    );
+    const client = await getMembershipClient(contractId);
+    const tx = await client.set_admin_insert_only({ admin_only: newValue });
+    const sent = await tx.signAndSend();
+    log(
+      `Admin-only insert set to ${newValue ? 'enabled' : 'disabled'}: ${sent.sendTransactionResponse?.hash || 'ok'}`,
+    );
+    setStatus('Setting updated', 'ok');
+    showToast(
+      `Admin-only insert ${newValue ? 'enabled' : 'disabled'}`,
+      'success',
+    );
+    await refreshState();
+  } catch (err) {
+    setStatus('Toggle failed', 'error');
+    log(`Admin-only insert toggle error: ${err.message}`);
+    showToast('Failed to toggle admin-only insert', 'error');
+  }
+}
+
+function syncNonMembershipValue() {
+  if (!valueSameCheckbox.checked) {
+    blockedValueInput.removeAttribute('disabled');
+    return;
+  }
+  blockedValueInput.value = blockedKeyInput.value;
+  blockedValueInput.setAttribute('disabled', 'disabled');
+}
+
+const reverseHexWithPrefix = (hex) => {
+    const hasPrefix = hex.startsWith("0x");
+    const pureHex = hasPrefix ? hex.slice(2) : hex;
+    const reversed = pureHex.match(/.{1,2}/g).reverse().join("");
+    return hasPrefix ? "0x" + reversed : reversed;
+};
+
+async function computeNonMembershipLeaf() {
+  try {
+    await ensureCryptoReady();
+    const keyValue = parseBigIntInput(blockedKeyInput.value, 'Key');
+    if (keyValue === null) {
+      throw new Error('Key is required');
+    }
+    const valueValue = parseBigIntInput(reverseHexWithPrefix(blockedValueInput.value), 'Value');
+    if (valueValue === null) {
+      throw new Error('Value is required');
+    }
+    const client = getHandle().webClient;
+
+    const leafBytes = await client.deriveAspUserLeaf(valueValue, keyValue.toString(16).padStart(64, '0'));
+    computedNonMembershipLeafHexEl.textContent = leafBytes;
+    log('Computed non-membership leaf hash');
+  } catch (err) {
+    log(`Non-membership leaf error: ${err.message}`);
+  }
+}
+
+async function removeNonMembershipLeaf() {
+  try {
+    ensureWalletConnected();
+    const contractId = nonMembershipContractInput.value.trim();
+    if (!contractId) {
+      throw new Error('Non-membership contract ID is required');
+    }
+
+    const keyValue = parseBigIntInput(reverseHexWithPrefix(removeNonMembershipKeyInput.value), 'Key');
+    if (keyValue === null) {
+      throw new Error('Key is required');
+    }
+
+    setStatus('Removing non-membership leaf...', 'info');
+    const client = await getNonMembershipClient(contractId);
+    const tx = await client.delete_leaf({ key: keyValue });
+    const sent = await tx.signAndSend();
+    log(`Non-membership leaf removed: ${sent.sendTransactionResponse?.hash || 'ok'}`);
+    setStatus('Non-membership leaf removed', 'ok');
+    showToast('Non-membership leaf removed successfully', 'success');
+    await refreshState();
+  } catch (err) {
+    setStatus('Non-membership removal failed', 'error');
+    log(`Non-membership removal error: ${err.message}`);
+    showToast('Failed to remove non-membership leaf', 'error');
+  }
+}
+
+async function insertNonMembershipLeaf() {
+  try {
+    ensureWalletConnected();
+    const contractId = nonMembershipContractInput.value.trim();
+    if (!contractId) {
+      throw new Error('Non-membership contract ID is required');
+    }
+
+    const keyValue = parseBigIntInput(reverseHexWithPrefix(blockedKeyInput.value), 'Key');
+    const valueValue = parseBigIntInput(reverseHexWithPrefix(blockedValueInput.value), 'Value');
+    if (keyValue === null || valueValue === null) {
+      throw new Error('Key and value are required');
+    }
+
+    setStatus('Submitting non-membership leaf...', 'info');
+    const client = await getNonMembershipClient(contractId);
+    const tx = await client.insert_leaf({ key: keyValue, value: valueValue });
+    const sent = await tx.signAndSend();
+    log(`Non-membership leaf submitted: ${sent.sendTransactionResponse?.hash || 'ok'}`);
+    setStatus('Non-membership leaf sent', 'ok');
+    await refreshState();
+  } catch (err) {
+    setStatus('Non-membership insert failed', 'error');
+    log(`Non-membership insert error: ${err.message}`);
+  }
+}
+
+connectBtn.addEventListener('click', () => {
+  connect();
+});
+refreshBtn.addEventListener('click', () => {
+  refreshState();
+});
+computeMembershipLeafBtn.addEventListener('click', () => {
+  computeMembershipLeaf();
+});
+useMembershipLeafBtn.addEventListener('click', () => {
+  useComputedMembershipLeaf();
+});
+insertMembershipLeafBtn.addEventListener('click', () => {
+  insertMembershipLeaf();
+});
+toggleAdminInsertOnlyBtn.addEventListener('click', () => {
+  toggleAdminInsertOnly();
+});
+computeNonMembershipLeafBtn.addEventListener('click', () => {
+  computeNonMembershipLeaf();
+});
+insertNonMembershipLeafBtn.addEventListener('click', () => {
+  insertNonMembershipLeaf();
+});
+removeNonMembershipLeafBtn.addEventListener('click', () => {
+  removeNonMembershipLeaf();
+});
+valueSameCheckbox.addEventListener('change', () => {
+  syncNonMembershipValue();
+});
+blockedKeyInput.addEventListener('input', () => {
+  syncNonMembershipValue();
+});
+
+async function init() {
+  setStatus('Initializing...', 'info');
+  await ensureCryptoReady();
+  await refreshState();
+  syncNonMembershipValue();
+  setStatus('Ready', 'ok');
+}
+
+init().catch(err => {
+  setStatus('Init failed', 'error');
+  log(`Init error: ${err.message}`);
+});
