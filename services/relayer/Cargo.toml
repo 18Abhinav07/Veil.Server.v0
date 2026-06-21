@@ -1,0 +1,31 @@
+[package]
+name = "relayer"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "relayer"
+path = "src/main.rs"
+
+[dependencies]
+# workspace crates
+stellar = { workspace = true }
+types = { workspace = true }
+anyhow = { workspace = true, features = ["std"] }
+hex = { workspace = true, features = ["std"] }
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true }
+
+# async runtime + web framework (not in workspace — added here directly)
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync"] }
+axum = { version = "0.8", features = ["json", "macros"] }
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints]
+workspace = true

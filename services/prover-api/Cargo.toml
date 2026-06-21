@@ -1,0 +1,38 @@
+[package]
+name = "prover-api"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+# workspace crates
+prover     = { workspace = true }
+stellar    = { workspace = true }
+types      = { workspace = true }
+state      = { workspace = true }
+circuits   = { workspace = true, features = ["std"] }
+zkhash     = { workspace = true }
+# ark family (for proof generation + serialization)
+ark-bn254    = { workspace = true, features = ["curve"] }
+ark-circom   = { workspace = true }
+ark-ff       = { workspace = true, features = ["std"] }
+ark-groth16  = { workspace = true }
+ark-serialize = { workspace = true, features = ["std"] }
+ark-std      = { workspace = true }
+ark-snark    = { workspace = true }
+# general
+anyhow       = { workspace = true, features = ["std"] }
+hex          = { workspace = true, features = ["std"] }
+num-bigint   = { workspace = true, features = ["serde"] }
+serde        = { workspace = true, features = ["std"] }
+serde_json   = { workspace = true, features = ["std"] }
+thiserror    = { workspace = true }
+# http server
+tokio        = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+axum         = { version = "0.8", features = ["json", "macros"] }
+tower-http   = { version = "0.6", features = ["trace", "cors"] }
+tracing      = { version = "0.1" }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints]
+workspace = true
