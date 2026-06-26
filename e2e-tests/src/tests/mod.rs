@@ -1,0 +1,11 @@
+//! End-to-end test modules
+//!
+//! Contains integration tests that verify the complete flow from
+//! proof generation through on-chain verification.
+
+mod e2e_bulk_payment;
+mod e2e_pool_2_in_2_out;
+mod e2e_pool_2tx_plan;
+#[cfg(feature = "testnet-integration")]
+mod e2e_testnet;
+pub mod utils;

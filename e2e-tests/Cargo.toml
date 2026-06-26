@@ -1,0 +1,41 @@
+[package]
+name = "e2e-tests"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# workspace
+asp-membership = { workspace = true }
+asp-non-membership = { workspace = true }
+circom-groth16-verifier = { workspace = true }
+# Circuit dependencies
+circuits = { workspace = true, features = ["std"] }
+# Contract dependencies
+pool = { workspace = true }
+soroban-utils = { workspace = true }
+# Shared deps
+tx-planner = { workspace = true }
+types = { workspace = true }
+zkhash = { workspace = true }
+
+# external
+anyhow = { workspace = true }
+hex = { workspace = true }
+num-bigint = { workspace = true }
+soroban-sdk = { workspace = true, features = ["testutils"] }
+serde_json = { workspace = true }
+serde = { workspace = true }
+
+# testnet-integration only
+reqwest = { workspace = true, optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
+stellar = { workspace = true, optional = true }
+
+[features]
+testnet-integration = ["dep:reqwest", "dep:tokio", "dep:stellar"]
+
+[lints]
+workspace = true
