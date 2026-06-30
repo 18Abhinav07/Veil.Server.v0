@@ -1,0 +1,167 @@
+name: Coverage (PR)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+jobs:
+  cov-head:
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    outputs:
+      pct: ${{ steps.cov.outputs.coverage }}
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2
+      - uses: taiki-e/install-action@541dbe11e2898b05bb65bedbd1d0c4e3092b5bdd # cargo-llvm-cov
+      - name: Build circuit artifacts (required by web)
+        run: cargo build -p circuits
+      - run: cargo llvm-cov --workspace --lcov --output-path lcov.info --ignore-filename-regex '^examples/'
+
+      - name: Upload head coverage artifact (for stacked PRs)
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4
+        with:
+          name: coverage-lcov
+          path: lcov.info
+          retention-days: 21
+
+      - name: Extract total coverage % (head)
+        id: cov
+        shell: bash
+        run: |
+          pct=$(awk -F: '
+            /^LH:/ {lh += $2}
+            /^LF:/ {lf += $2}
+            END { if (lf>0) printf "%.2f", (lh/lf)*100; else print "0.00" }
+          ' lcov.info)
+          echo "coverage=$pct" >> "$GITHUB_OUTPUT"
+
+  compare-and-comment:
+    needs: cov-head
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    steps:
+      # 1) Try to download base artifact from the base branch
+      - name: Download base branch artifact (if present)
+        id: dl
+        uses: dawidd6/action-download-artifact@ac66b43f0e6a346234dd65d4d0c8fbb31cb316e5
+        with:
+          name: coverage-lcov
+          branch: ${{ github.event.pull_request.base.ref }}
+          if_no_artifact_found: ignore # don't fail if missing
+
+      - name: Check if base artifact was found
+        id: base_art
+        shell: bash
+        run: |
+          if [ -f "coverage-lcov/lcov.info" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 2) Fallback: if no artifact, checkout base commit and compute base coverage here
+      - name: Checkout base
+        if: ${{ steps.base_art.outputs.found == 'false' }}
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Setup Rust (fallback path)
+        if: ${{ steps.base_art.outputs.found == 'false' }}
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+
+      - name: Cache (fallback path)
+        if: ${{ steps.base_art.outputs.found == 'false' }}
+        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2
+
+      - name: Install cargo-llvm-cov (fallback path)
+        if: ${{ steps.base_art.outputs.found == 'false' }}
+        uses: taiki-e/install-action@541dbe11e2898b05bb65bedbd1d0c4e3092b5bdd # cargo-llvm-cov
+
+      - name: Build circuit artifacts (required by web) (fallback path)
+        if: ${{ steps.base_art.outputs.found == 'false' }}
+        run: cargo build -p circuits
+
+      - name: Run base coverage (fallback path)
+        if: ${{ steps.base_art.outputs.found == 'false' }}
+        run: cargo llvm-cov --workspace --lcov --output-path base.lcov.info --ignore-filename-regex '^examples/'
+
+      # 3) Extract base coverage (from artifact or from freshly computed fallback)
+      - name: Extract total coverage % (base)
+        id: basecov
+        shell: bash
+        run: |
+          file="coverage-lcov/lcov.info"
+          if [ "${{ steps.base_art.outputs.found }}" != "true" ]; then
+            file="base.lcov.info"
+          fi
+          pct=$(awk -F: '
+            /^LH:/ {lh += $2}
+            /^LF:/ {lf += $2}
+            END { if (lf>0) printf "%.2f", (lh/lf)*100; else print "0.00" }
+          ' "$file")
+          echo "coverage=$pct" >> "$GITHUB_OUTPUT"
+
+      - name: Find existing coverage comment
+        id: find_comment
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: "github-actions[bot]"
+          body-includes: "<!-- coverage-bot -->"
+
+      - name: Comment only if head < base
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            const base = parseFloat(`${{ steps.basecov.outputs.coverage }}`);
+            const head = parseFloat(`${{ needs.cov-head.outputs.pct }}`);
+            if (!(base >= 0) || !(head >= 0)) {
+              core.setFailed(`Bad coverage values. base=${base} head=${head}`);
+              return;
+            }
+            if (head >= base) {
+              core.info(`No drop (head ${head}% >= base ${base}%).`);
+              return;
+            }
+            const delta = (head - base).toFixed(2);
+            const body = `<!-- coverage-bot -->
+            **Coverage (base → head):** \`${base}% → ${head}%\`  ⬇️ ${Math.abs(delta)} pp
+            _Only posts when PR coverage is lower than the base branch's latest push (or freshly computed base)._
+            `;
+            const commentId = `${{ steps.find_comment.outputs.comment-id }}`;
+            if (commentId) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: parseInt(commentId, 10),
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }

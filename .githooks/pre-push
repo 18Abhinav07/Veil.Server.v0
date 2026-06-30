@@ -1,0 +1,63 @@
+#!/bin/sh
+set -e
+
+echo "⚠️ Some tests are ignored because they take a long time"
+echo "⚠️ you can run them with ('BUILD_TESTS=1 cargo test -p circuits -- --ignored') "
+
+# Dependency sorting
+if ! cargo sort --workspace -g --check; then
+    echo "❌ Dependencies should be sorted (run 'cargo sort --workspace -g')"
+    exit 1
+fi
+
+# Unused dependencies
+if ! cargo shear; then
+    echo "❌ Unused dependencies detected (run 'cargo shear --fix')"
+    exit 7
+fi
+
+# Dependency audit
+if ! cargo deny check; then
+    echo "❌ Critical: Vulnerable dependencies detected (run 'cargo deny check')"
+    exit 2
+fi
+
+# Formatting check
+if ! cargo +nightly fmt --all -- --check --config-path rustfmt.toml; then
+    echo "❌ Formatting issues (run 'cargo +nightly fmt --all')"
+    exit 3
+fi
+
+# Typo check
+if ! typos; then
+    echo "❌ Spelling mistakes found (run 'typos --write-changes')"
+    exit 4
+fi
+
+# Linting
+if ! cargo clippy --all-targets --all-features -- -D warnings; then
+    echo "❌ Clippy violations (check warnings above)"
+    exit 5
+fi
+
+# Tests
+if ! BUILD_TESTS=1 cargo test --workspace --verbose; then
+    echo "❌ Test failures detected"
+    exit 6
+fi
+
+# Contracts build (Soroban)
+if ! command -v stellar >/dev/null 2>&1; then
+    echo "❌ Missing 'stellar' CLI (required for contract build)"
+    exit 9
+fi
+
+mkdir -p target/stellar
+for pkg in asp-membership asp-non-membership circom-groth16-verifier pool; do
+    if ! stellar contract build --manifest-path Cargo.toml --out-dir target/stellar --optimize --package "$pkg"; then
+        echo "❌ Contract build failed for package: $pkg"
+        exit 10
+    fi
+done
+
+echo "✅ All checks passed!"
