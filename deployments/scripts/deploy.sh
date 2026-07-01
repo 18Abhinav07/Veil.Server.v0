@@ -260,6 +260,7 @@ parse_pool_spec() {
   esac
 }
 
+ASP_MEMBERSHIP_DEPLOYMENT_LEDGER="$(get_latest_ledger_seq)"
 step "deploy asp-membership"
 if [[ "$SKIP_INIT" != "true" ]]; then
   ASP_MEMBERSHIP_ID="$(deploy_contract asp-membership "$ASP_MEMBERSHIP_WASM" --admin "$ADMIN_ADDR" --levels "$ASP_LEVELS")"
@@ -340,7 +341,7 @@ for i in "${!POOL_IDS[@]}"; do
 done
 pools_json+="]"
 
-DEPLOY_JSON="{\"network\":\"$NETWORK\",\"deployer\":\"$DEPLOYER_ADDR\",\"admin\":\"$ADMIN_ADDR\",\"asp_membership\":\"$ASP_MEMBERSHIP_ID\",\"asp_non_membership\":\"$ASP_NON_MEMBERSHIP_ID\",\"verifier\":\"$VERIFIER_ID\",\"public_key_registry\":\"$PUBLIC_KEY_REGISTRY_ID\",\"pools\":$pools_json}"
+DEPLOY_JSON="{\"network\":\"$NETWORK\",\"deployer\":\"$DEPLOYER_ADDR\",\"admin\":\"$ADMIN_ADDR\",\"asp_membership\":\"$ASP_MEMBERSHIP_ID\",\"aspMembershipDeploymentLedger\":$ASP_MEMBERSHIP_DEPLOYMENT_LEDGER,\"asp_non_membership\":\"$ASP_NON_MEMBERSHIP_ID\",\"verifier\":\"$VERIFIER_ID\",\"public_key_registry\":\"$PUBLIC_KEY_REGISTRY_ID\",\"pools\":$pools_json}"
 
 DEPLOYMENTS_DIR="$ROOT_DIR/deployments/$NETWORK"
 mkdir -p "$DEPLOYMENTS_DIR"

@@ -489,15 +489,15 @@ mod contract_config_tests {
                 "network": "testnet",
                 "deployer": "GD3JVKVNHMILTR4HI6BQIQHJKFPNUH3WRGU4OBPNO7LGLZR5SAFFOC3V",
                 "admin": "GD3JVKVNHMILTR4HI6BQIQHJKFPNUH3WRGU4OBPNO7LGLZR5SAFFOC3V",
-                "asp_membership": "CADKMSTFPD3OYVSIRQTBWKN2DZ4ZG6Z6S7PGENDWOTJF4KS6AGUAEW5K",
-                "asp_non_membership": "CCETM4R7MKQHDGQOK5XYYDK5ZRI65WYEG3BFZYWRXLXC63XDQ3BYN2W3",
-                "verifier": "CA3MJMNV5PHQJNAUCGUIWYXE3OI3E2QIGSSM4GXK4CQJSIOKJH7VHJC7",
-                "public_key_registry": "CBYE54LFAZC5R6XGAPIMJULYRBFFQ3VE3XCZTMIOEMRILHLODE4HBRE2",
+                "asp_membership": "CB7NDO6JG3HKNMPN7MJUXSD4R2TPQRLNJZAVA57U2KMTAMMFCFA6ZC57",
+                "asp_non_membership": "CDO2HJIFBF5Y7E5GH5JTMCVI34NQABMT6MAHKJ4U5DVMG5GEP635GYCE",
+                "verifier": "CDZMUTPTWVNFROQ3DAAOKKTRPZLBBUM4JZQEM63TRVPRUC5PCWPYNU6H",
+                "public_key_registry": "CCB7O5UIYRHVFVRR4GKXKU3CYJCYGFKSI3PWBJJV56ID6SZFF5FNIC75",
                 {extra_field}
                 "pools": [{{
-                    "poolContractId": "CBKWZP63CWSBAHPE2MO6ZQH2DDO3JEKKMYT2Z6WW3WW3FZQL2KGHV4QA",
+                    "poolContractId": "CA2LFUXWJB73N3VKKLOMDNTXHTZ2WUF5KATU424WWKTTBDJZ6EJFJEM4",
                     "tokenContractId": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
-                    "deploymentLedger": 3348076,
+                    "deploymentLedger": 3381563,
                     "enabled": true,
                     "asset": {{
                         "kind": "classic",
@@ -512,10 +512,10 @@ mod contract_config_tests {
     #[test]
     fn asp_membership_scan_start_ledger_uses_explicit_asp_ledger() -> Result<()> {
         let cfg: ContractConfig =
-            serde_json::from_str(&config_json(r#""aspMembershipDeploymentLedger": 3347756,"#))?;
+            serde_json::from_str(&config_json(r#""aspMembershipDeploymentLedger": 3381546,"#))?;
 
-        assert_eq!(cfg.min_deployment_ledger()?, 3348076);
-        assert_eq!(cfg.asp_membership_scan_start_ledger()?, 3347756);
+        assert_eq!(cfg.min_deployment_ledger()?, 3381563);
+        assert_eq!(cfg.asp_membership_scan_start_ledger()?, 3381546);
         Ok(())
     }
 
@@ -523,7 +523,7 @@ mod contract_config_tests {
     fn asp_membership_scan_start_ledger_falls_back_to_pool_ledger() -> Result<()> {
         let cfg: ContractConfig = serde_json::from_str(&config_json(""))?;
 
-        assert_eq!(cfg.asp_membership_scan_start_ledger()?, 3348076);
+        assert_eq!(cfg.asp_membership_scan_start_ledger()?, 3381563);
         Ok(())
     }
 }
