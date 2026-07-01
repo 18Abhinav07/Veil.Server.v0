@@ -10,7 +10,6 @@ prover     = { workspace = true }
 stellar    = { workspace = true }
 types      = { workspace = true }
 state      = { workspace = true }
-circuits   = { workspace = true, features = ["std"] }
 zkhash     = { workspace = true }
 # ark family (for proof generation + serialization)
 ark-bn254    = { workspace = true, features = ["curve"] }

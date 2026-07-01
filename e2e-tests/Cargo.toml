@@ -27,7 +27,6 @@ hex = { workspace = true }
 num-bigint = { workspace = true }
 soroban-sdk = { workspace = true, features = ["testutils"] }
 serde_json = { workspace = true }
-serde = { workspace = true }
 
 # testnet-integration only
 reqwest = { workspace = true, optional = true }
