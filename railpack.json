@@ -12,7 +12,9 @@
       "commands": [
         "...",
         "cargo build -p prover-api -p relayer --release",
-        "mkdir -p runtime-artifacts/circuits",
+        "mkdir -p runtime-artifacts/bin runtime-artifacts/circuits",
+        "cp target/release/prover-api runtime-artifacts/bin/prover-api",
+        "cp target/release/relayer runtime-artifacts/bin/relayer",
         "cp target/circuits-artifacts/release/policy_tx_2_2.wasm runtime-artifacts/circuits/policy_tx_2_2.wasm",
         "cp target/circuits-artifacts/release/policy_tx_2_2.r1cs runtime-artifacts/circuits/policy_tx_2_2.r1cs"
       ]

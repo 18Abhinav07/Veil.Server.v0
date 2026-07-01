@@ -32,6 +32,19 @@ choose_artifact() {
   printf '%s' "${@: -1}"
 }
 
+choose_executable() {
+  local candidate
+  for candidate in "$@"; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s' "$candidate"
+      return
+    fi
+  done
+
+  echo "Missing required runtime executable: $1" >&2
+  exit 1
+}
+
 export PROVER_API_WASM_PATH="$(
   choose_artifact "${PROVER_API_WASM_PATH:-}" \
     "runtime-artifacts/circuits/policy_tx_2_2.wasm" \
@@ -63,12 +76,23 @@ if [[ -z "${RELAYER_SECRET:-}" ]]; then
   exit 1
 fi
 
+prover_api_bin="$(
+  choose_executable \
+    "runtime-artifacts/bin/prover-api" \
+    "target/release/prover-api"
+)"
+relayer_bin="$(
+  choose_executable \
+    "runtime-artifacts/bin/relayer" \
+    "target/release/relayer"
+)"
+
 echo "Starting prover-api on $PROVER_API_LISTEN_ADDR"
-./target/release/prover-api &
+"$prover_api_bin" &
 prover_pid=$!
 
 echo "Starting relayer on $RELAYER_LISTEN_ADDR"
-./target/release/relayer &
+"$relayer_bin" &
 relayer_pid=$!
 
 terminate() {
