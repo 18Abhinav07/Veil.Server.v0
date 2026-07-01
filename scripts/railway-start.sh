@@ -12,32 +12,35 @@ export RELAYER_LISTEN_ADDR="${RELAYER_LISTEN_ADDR:-0.0.0.0:3000}"
 
 choose_artifact() {
   local current_value="$1"
-  local release_path="$2"
-  local debug_path="$3"
+  shift
 
   if [[ -n "$current_value" && -f "$current_value" ]]; then
     printf '%s' "$current_value"
+    return
   elif [[ -n "$current_value" ]]; then
     echo "Ignoring missing artifact override: $current_value" >&2
-    if [[ -f "$release_path" ]]; then
-      printf '%s' "$release_path"
-    else
-      printf '%s' "$debug_path"
-    fi
-  elif [[ -f "$release_path" ]]; then
-    printf '%s' "$release_path"
-  else
-    printf '%s' "$debug_path"
   fi
+
+  local candidate
+  for candidate in "$@"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s' "$candidate"
+      return
+    fi
+  done
+
+  printf '%s' "${@: -1}"
 }
 
 export PROVER_API_WASM_PATH="$(
   choose_artifact "${PROVER_API_WASM_PATH:-}" \
+    "runtime-artifacts/circuits/policy_tx_2_2.wasm" \
     "target/circuits-artifacts/release/policy_tx_2_2.wasm" \
     "target/circuits-artifacts/debug/policy_tx_2_2.wasm"
 )"
 export PROVER_API_R1CS_PATH="$(
   choose_artifact "${PROVER_API_R1CS_PATH:-}" \
+    "runtime-artifacts/circuits/policy_tx_2_2.r1cs" \
     "target/circuits-artifacts/release/policy_tx_2_2.r1cs" \
     "target/circuits-artifacts/debug/policy_tx_2_2.r1cs"
 )"

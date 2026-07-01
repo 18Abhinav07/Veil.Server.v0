@@ -11,11 +11,23 @@
     "build": {
       "commands": [
         "...",
-        "cargo build -p prover-api -p relayer --release"
+        "cargo build -p prover-api -p relayer --release",
+        "mkdir -p runtime-artifacts/circuits",
+        "cp target/circuits-artifacts/release/policy_tx_2_2.wasm runtime-artifacts/circuits/policy_tx_2_2.wasm",
+        "cp target/circuits-artifacts/release/policy_tx_2_2.r1cs runtime-artifacts/circuits/policy_tx_2_2.r1cs"
       ]
     }
   },
   "deploy": {
+    "inputs": [
+      "...",
+      {
+        "step": "build",
+        "include": [
+          "runtime-artifacts"
+        ]
+      }
+    ],
     "aptPackages": [
       "libsqlite3-0"
     ],
