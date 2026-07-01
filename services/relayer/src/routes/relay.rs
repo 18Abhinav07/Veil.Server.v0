@@ -29,9 +29,8 @@ pub async fn handler(
             req.proof_uncompressed_hex.len()
         )));
     }
-    let proof_bytes = hex::decode(&req.proof_uncompressed_hex).map_err(|e| {
-        RelayerError::Validation(format!("invalid proof hex: {e}"))
-    })?;
+    let proof_bytes = hex::decode(&req.proof_uncompressed_hex)
+        .map_err(|e| RelayerError::Validation(format!("invalid proof hex: {e}")))?;
 
     let request_fingerprint = relay_request_fingerprint(&req)?;
 
@@ -47,7 +46,13 @@ pub async fn handler(
     // concurrent requests racing on the same account sequence number.
     let _lock = state.sequence_lock.lock().await;
 
-    if let Some(cached) = state.relay_cache.lock().await.get(&request_fingerprint).cloned() {
+    if let Some(cached) = state
+        .relay_cache
+        .lock()
+        .await
+        .get(&request_fingerprint)
+        .cloned()
+    {
         info!(
             pool_id = %req.pool_id,
             tx_hash = %cached.tx_hash,
@@ -63,8 +68,8 @@ pub async fn handler(
         .prepare_pool_transact(&req.pool_id, &input, &relayer_pubkey)
         .await
         .map_err(|e| {
-            let msg = e.to_string();
-            if msg.contains("simulation") || msg.contains("contract") {
+            let msg = format!("{e:#}");
+            if msg.contains("simulation") || msg.contains("contract") || msg.contains("HostError") {
                 RelayerError::SimulationRejected(msg)
             } else {
                 RelayerError::from(e)
@@ -82,9 +87,7 @@ pub async fn handler(
     let rpc = Client::new(&state.rpc_url)
         .map_err(|e| RelayerError::Internal(format!("rpc client: {e}")))?;
 
-    let tx_hash = submit_tx(&signed, &rpc)
-        .await
-        .map_err(RelayerError::from)?;
+    let tx_hash = submit_tx(&signed, &rpc).await.map_err(RelayerError::from)?;
 
     info!(pool_id = %req.pool_id, tx_hash = %tx_hash, "relay submitted");
 

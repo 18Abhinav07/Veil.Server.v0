@@ -1,6 +1,26 @@
 use anyhow::{Context, Result, bail};
 use std::{net::SocketAddr, path::PathBuf};
 
+fn default_proving_key_path() -> PathBuf {
+    PathBuf::from("deployments/testnet/circuit_keys/policy_tx_2_2_proving_key.bin")
+}
+
+fn is_deployed_runtime() -> bool {
+    std::env::var_os("RAILWAY_ENVIRONMENT").is_some()
+        || std::env::var_os("RAILWAY_SERVICE_ID").is_some()
+        || std::env::var_os("RAILWAY_PROJECT_ID").is_some()
+}
+
+fn validate_proving_key_path_for_environment(path: &std::path::Path, deployed: bool) -> Result<()> {
+    if deployed && path.to_string_lossy().contains("testdata") {
+        bail!(
+            "testdata proving key path is not allowed in deployed runtime: {}. Use deployments/testnet/circuit_keys/policy_tx_2_2_proving_key.bin",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
 pub struct Config {
     /// Path to deployments.json (ContractConfig)
     pub deployments_path: PathBuf,
@@ -41,8 +61,9 @@ impl Config {
 
         let proving_key_path = PathBuf::from(
             std::env::var("PROVER_API_PK_PATH")
-                .unwrap_or_else(|_| "testdata/policy_tx_2_2_proving_key.bin".into()),
+                .unwrap_or_else(|_| default_proving_key_path().to_string_lossy().into_owned()),
         );
+        validate_proving_key_path_for_environment(&proving_key_path, is_deployed_runtime())?;
 
         for (label, path) in [
             ("WASM", &wasm_path),
@@ -67,5 +88,39 @@ impl Config {
             proving_key_path,
             listen_addr,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn default_proving_key_path_uses_canonical_deployment_key() {
+        let default = default_proving_key_path();
+
+        assert_eq!(
+            default,
+            Path::new("deployments/testnet/circuit_keys/policy_tx_2_2_proving_key.bin")
+        );
+        assert!(
+            !default.to_string_lossy().contains("testdata"),
+            "deployed prover defaults must not use local testdata keys"
+        );
+    }
+
+    #[test]
+    fn deployed_runtime_rejects_testdata_proving_key_path() {
+        let err = validate_proving_key_path_for_environment(
+            Path::new("testdata/policy_tx_2_2_proving_key.bin"),
+            true,
+        )
+        .expect_err("testdata proving keys must be rejected in deployed runtime");
+
+        assert!(
+            err.to_string().contains("testdata proving key"),
+            "unexpected error: {err}"
+        );
     }
 }

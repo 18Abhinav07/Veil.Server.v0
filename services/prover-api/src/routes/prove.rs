@@ -1,7 +1,7 @@
 use axum::{Json, extract::State};
 
 use crate::{
-    error::ProverResult,
+    error::{ProverResult, format_error_chain},
     proof::{
         prove_deposit, prove_register, prove_register_asp_membership, prove_transfer,
         prove_withdraw,
@@ -20,7 +20,7 @@ pub async fn deposit_handler(
 ) -> ProverResult<Json<DepositResponse>> {
     prove_deposit(&state, req).await.map(Json).map_err(|e| {
         tracing::error!("deposit proof failed: {e:#}");
-        crate::error::ProverError::ProofFailed(e.to_string())
+        crate::error::ProverError::ProofFailed(format_error_chain(&e))
     })
 }
 
@@ -30,7 +30,7 @@ pub async fn withdraw_handler(
 ) -> ProverResult<Json<WithdrawResponse>> {
     prove_withdraw(&state, req).await.map(Json).map_err(|e| {
         tracing::error!("withdraw proof failed: {e:#}");
-        crate::error::ProverError::ProofFailed(e.to_string())
+        crate::error::ProverError::ProofFailed(format_error_chain(&e))
     })
 }
 
@@ -40,7 +40,7 @@ pub async fn transfer_handler(
 ) -> ProverResult<Json<TransferResponse>> {
     prove_transfer(&state, req).await.map(Json).map_err(|e| {
         tracing::error!("transfer proof failed: {e:#}");
-        crate::error::ProverError::ProofFailed(e.to_string())
+        crate::error::ProverError::ProofFailed(format_error_chain(&e))
     })
 }
 
@@ -50,7 +50,7 @@ pub async fn register_handler(
 ) -> ProverResult<Json<RegisterResponse>> {
     prove_register(&state, req).await.map(Json).map_err(|e| {
         tracing::error!("register failed: {e:#}");
-        crate::error::ProverError::ChainError(e.to_string())
+        crate::error::ProverError::ChainError(format_error_chain(&e))
     })
 }
 
@@ -63,6 +63,6 @@ pub async fn register_asp_membership_handler(
         .map(Json)
         .map_err(|e| {
             tracing::error!("asp membership registration failed: {e:#}");
-            crate::error::ProverError::ChainError(e.to_string())
+            crate::error::ProverError::ChainError(format_error_chain(&e))
         })
 }
