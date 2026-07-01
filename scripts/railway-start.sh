@@ -15,8 +15,15 @@ choose_artifact() {
   local release_path="$2"
   local debug_path="$3"
 
-  if [[ -n "$current_value" ]]; then
+  if [[ -n "$current_value" && -f "$current_value" ]]; then
     printf '%s' "$current_value"
+  elif [[ -n "$current_value" ]]; then
+    echo "Ignoring missing artifact override: $current_value" >&2
+    if [[ -f "$release_path" ]]; then
+      printf '%s' "$release_path"
+    else
+      printf '%s' "$debug_path"
+    fi
   elif [[ -f "$release_path" ]]; then
     printf '%s' "$release_path"
   else
