@@ -1,5 +1,0 @@
-[phases.build]
-cmds = ["cargo build -p prover-api -p relayer --release"]
-
-[start]
-cmd = "bash scripts/railway-start.sh"

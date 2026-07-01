@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "rust",
+  "steps": {
+    "build": {
+      "commands": [
+        "...",
+        "cargo build -p prover-api -p relayer --release"
+      ]
+    }
+  },
+  "deploy": {
+    "startCommand": "bash scripts/railway-start.sh"
+  }
+}
