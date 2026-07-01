@@ -1,0 +1,72 @@
+[build]
+target = "app/index.html"
+public-url = "/"
+dist = "dist"
+filehash = false
+release = true
+
+[watch]
+watch = ["app", "circuits"]
+ignore = ["app/node_modules", "dist"]
+
+[serve]
+addresses = ["0.0.0.0"]
+port = 8000
+
+[tools]
+tailwindcss = "4.1.18"
+
+# Copy all static assets to staging
+[[hooks]]
+stage = "pre_build"
+command = "sh"
+command_arguments = ["-c", """
+mkdir -p $TRUNK_STAGING_DIR/circuits
+
+# Circuit artifacts from a deterministic publish directory
+#
+# `circuits/build.rs` publishes to:
+#   target/circuits-artifacts/<profile>/{name}.r1cs
+#   target/circuits-artifacts/<profile>/{name}.wasm
+#
+# Prefer the artifacts which match the active Trunk build profile. Trunk exposes
+# the selected profile to hooks via `TRUNK_PROFILE`.
+PROFILE="${TRUNK_PROFILE:-release}"
+CIRCUIT_OUT="target/circuits-artifacts/$PROFILE"
+
+if [ ! -d "$CIRCUIT_OUT" ]; then
+    echo "trunk:error: missing circuit artifacts dir: $CIRCUIT_OUT" >&2
+    if [ "$PROFILE" = "release" ]; then
+        echo "trunk:error: run 'cargo build -p circuits --release' to generate them" >&2
+    else
+        echo "trunk:error: run 'cargo build -p circuits' to generate them" >&2
+    fi
+    exit 1
+fi
+
+cp "$CIRCUIT_OUT"/*.r1cs "$TRUNK_STAGING_DIR/circuits/"
+cp "$CIRCUIT_OUT"/*.wasm "$TRUNK_STAGING_DIR/circuits/"
+
+# Static files
+cp app/admin.html "$TRUNK_STAGING_DIR/" 2>/dev/null || true
+cp app/disclosure.html "$TRUNK_STAGING_DIR/" 2>/dev/null || true
+
+# Distribution legal files (licenses + notices).
+sh deployments/scripts/stage-dist-legal.sh "$TRUNK_STAGING_DIR"
+
+# Bundle corresponding source for LGPL compliance (served as a downloadable archive).
+sh deployments/scripts/package-circuits-source-bundle.sh "$TRUNK_STAGING_DIR/circuits/source-bundle.tar.gz"
+"""]
+
+# Bundle JS with esbuild
+[[hooks]]
+stage = "build"
+command = "sh"
+command_arguments = ["-c", """
+./app/node_modules/.bin/esbuild app/js/ui.js --external:./web.js --bundle --outfile="$TRUNK_STAGING_DIR/js/ui.js" --format=esm
+./app/node_modules/.bin/esbuild app/js/admin.js --external:./web.js --bundle --outfile="$TRUNK_STAGING_DIR/js/admin.js" --format=esm
+./app/node_modules/.bin/esbuild app/js/disclosure.js --external:./web.js --bundle --outfile="$TRUNK_STAGING_DIR/js/disclosure.js" --format=esm
+
+# Service worker must be served from the root (not bundled with ui.js) so it has full-page scope
+cp app/js/sw.js "$TRUNK_STAGING_DIR/sw.js"
+"""]
