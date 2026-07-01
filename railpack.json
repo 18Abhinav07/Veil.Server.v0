@@ -1,6 +1,12 @@
 {
   "$schema": "https://schema.railpack.com",
   "provider": "rust",
+  "buildAptPackages": [
+    "clang",
+    "libclang-dev",
+    "libsqlite3-dev",
+    "pkg-config"
+  ],
   "steps": {
     "build": {
       "commands": [
@@ -10,6 +16,9 @@
     }
   },
   "deploy": {
+    "aptPackages": [
+      "libsqlite3-0"
+    ],
     "startCommand": "bash scripts/railway-start.sh"
   }
 }
