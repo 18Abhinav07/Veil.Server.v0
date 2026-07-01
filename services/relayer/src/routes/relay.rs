@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::{Json, extract::State};
+use sha2::{Digest, Sha256};
 use stellar::{Client, PoolTransactInput, submit_tx};
 use tracing::info;
 
@@ -9,6 +10,13 @@ use crate::{
     state::AppState,
     types::{RelayRequest, RelayResponse},
 };
+
+fn relay_request_fingerprint(req: &RelayRequest) -> Result<String, RelayerError> {
+    let bytes = serde_json::to_vec(req)
+        .map_err(|e| RelayerError::Internal(format!("relay fingerprint serialization: {e}")))?;
+    let digest = Sha256::digest(bytes);
+    Ok(hex::encode(digest))
+}
 
 pub async fn handler(
     State(state): State<Arc<AppState>>,
@@ -25,6 +33,8 @@ pub async fn handler(
         RelayerError::Validation(format!("invalid proof hex: {e}"))
     })?;
 
+    let request_fingerprint = relay_request_fingerprint(&req)?;
+
     let input = PoolTransactInput {
         proof_uncompressed: proof_bytes,
         ext_data: req.ext_data,
@@ -36,6 +46,15 @@ pub async fn handler(
     // Hold sequence lock for the entire simulate → sign → submit flow to prevent
     // concurrent requests racing on the same account sequence number.
     let _lock = state.sequence_lock.lock().await;
+
+    if let Some(cached) = state.relay_cache.lock().await.get(&request_fingerprint).cloned() {
+        info!(
+            pool_id = %req.pool_id,
+            tx_hash = %cached.tx_hash,
+            "relay idempotency cache hit"
+        );
+        return Ok(Json(cached));
+    }
 
     // Simulate (griefing guard: catches invalid proofs, stale roots, spent
     // nullifiers before spending real fees).
@@ -69,8 +88,59 @@ pub async fn handler(
 
     info!(pool_id = %req.pool_id, tx_hash = %tx_hash, "relay submitted");
 
-    Ok(Json(RelayResponse {
+    let response = RelayResponse {
         tx_hash,
         status: "submitted",
-    }))
+    };
+    state
+        .relay_cache
+        .lock()
+        .await
+        .insert(request_fingerprint, response.clone());
+
+    Ok(Json(response))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use types::{ExtAmount, Field, U256};
+
+    fn sample_request() -> RelayRequest {
+        RelayRequest {
+            pool_id: "CCB5JF3L7K3Y5X5HYY57LJCDGN4FKIE2MBYQOTZWDIXNX6STFFXOU4II".to_owned(),
+            proof_uncompressed_hex: "00".repeat(256),
+            ext_data: types::ExtData {
+                recipient: "GACNTLJEYVHVQOHFJC7T7VTGJIZZHYN52MH6FHYGRGK2RFSY33GL2GXG".to_owned(),
+                ext_amount: ExtAmount::from(0),
+                encrypted_output0: vec![1, 2, 3],
+                encrypted_output1: vec![4, 5, 6],
+            },
+            public: stellar::OnchainProofPublicInputs {
+                root: Field(U256::from(1)),
+                input_nullifiers: [Field(U256::from(2)), Field(U256::from(3))],
+                output_commitment0: Field(U256::from(4)),
+                output_commitment1: Field(U256::from(5)),
+                public_amount: Field(U256::from(6)),
+                ext_data_hash_be: [7u8; 32],
+                asp_membership_root: Field(U256::from(8)),
+                asp_non_membership_root: Field(U256::from(9)),
+            },
+        }
+    }
+
+    #[test]
+    fn relay_request_fingerprint_is_stable_and_sensitive() {
+        let first = sample_request();
+        let mut second = sample_request();
+
+        let first_hash = relay_request_fingerprint(&first).expect("first hash");
+        let repeat_hash = relay_request_fingerprint(&first).expect("repeat hash");
+        assert_eq!(first_hash, repeat_hash);
+        assert_eq!(first_hash.len(), 64);
+
+        second.public.input_nullifiers[0] = Field(U256::from(10));
+        let changed_hash = relay_request_fingerprint(&second).expect("changed hash");
+        assert_ne!(first_hash, changed_hash);
+    }
 }

@@ -1,6 +1,7 @@
 use crate::config::Config;
 use anyhow::{Context, Result};
 use stellar::{LocalSigner, StateFetcher};
+use std::collections::HashMap;
 use tokio::sync::Mutex;
 use types::ContractConfig;
 
@@ -12,6 +13,9 @@ pub struct AppState {
     pub rpc_url: String,
     /// Prevents concurrent relay requests from racing on account sequence numbers.
     pub sequence_lock: Mutex<()>,
+    /// Returns the original tx hash when clients retry the exact same relay
+    /// body after a lost HTTP response.
+    pub relay_cache: Mutex<HashMap<String, crate::types::RelayResponse>>,
 }
 
 impl AppState {
@@ -34,6 +38,7 @@ impl AppState {
             network_passphrase: config.network_passphrase.clone(),
             rpc_url: config.stellar_rpc_url.clone(),
             sequence_lock: Mutex::new(()),
+            relay_cache: Mutex::new(HashMap::new()),
         })
     }
 }

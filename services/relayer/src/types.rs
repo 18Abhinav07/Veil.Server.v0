@@ -3,7 +3,7 @@ use stellar::OnchainProofPublicInputs;
 use types::ExtData;
 
 /// POST /relay request body.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelayRequest {
     /// Pool contract ID (C... strkey).
@@ -17,7 +17,7 @@ pub struct RelayRequest {
 }
 
 /// POST /relay response body.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelayResponse {
     pub tx_hash: String,
