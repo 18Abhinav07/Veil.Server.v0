@@ -28,7 +28,6 @@ Options:
                         classic:<CODE>:<ISSUER>:<TOKEN_CONTRACT_ID>
   --asp-levels N        Merkle tree levels for asp-membership (required)
   --pool-levels N       Merkle tree levels for pool (required)
-  --max-deposit U256    Maximum deposit amount (required)
   --vk-json JSON        Verification key as a JSON string (snarkjs or repo format)
   --vk-file PATH        Path to a verification key JSON file
   --skip-init           Deploy only, do not call constructors
@@ -44,7 +43,7 @@ Examples:
     --pool classic:USDC:G...:CD... \
     --asp-levels 8 \
     --pool-levels 8 \
-    --max-deposit 1000000000
+    --vk-file ceremony/verification_key.json
 
 Notes:
   - Provide --vk-file or --vk-json to embed the verification key and build the
@@ -69,7 +68,6 @@ TOKEN=""
 POOL_SPECS=()
 ASP_LEVELS=""
 POOL_LEVELS=""
-MAX_DEPOSIT=""
 VK_JSON=""
 VK_FILE=""
 SKIP_INIT=false
@@ -83,7 +81,6 @@ while [[ $# -gt 0 ]]; do
     --pool) POOL_SPECS+=("$2"); shift 2 ;;
     --asp-levels) ASP_LEVELS="$2"; shift 2 ;;
     --pool-levels) POOL_LEVELS="$2"; shift 2 ;;
-    --max-deposit) MAX_DEPOSIT="$2"; shift 2 ;;
     --vk-json) VK_JSON="$2"; shift 2 ;;
     --vk-file) VK_FILE="$2"; shift 2 ;;
     --skip-init) SKIP_INIT=true; shift ;;
@@ -99,7 +96,6 @@ need stellar
 [[ -n "$DEPLOYER" ]] || die "--deployer is required"
 [[ -n "$ASP_LEVELS" ]] || die "--asp-levels is required"
 [[ -n "$POOL_LEVELS" ]] || die "--pool-levels is required"
-[[ -n "$MAX_DEPOSIT" ]] || die "--max-deposit is required"
 
 if [[ -n "$VK_JSON" && -n "$VK_FILE" ]]; then
   die "use only one of --vk-json or --vk-file"
@@ -297,7 +293,7 @@ for spec in "${POOL_SPECS[@]}"; do
     pool_id="$(deploy_contract pool "$POOL_WASM" \
       --admin "$ADMIN_ADDR" --token "$token_id" --verifier "$VERIFIER_ID" \
       --asp-membership "$ASP_MEMBERSHIP_ID" --asp-non-membership "$ASP_NON_MEMBERSHIP_ID" \
-      --maximum-deposit-amount "$MAX_DEPOSIT" --levels "$POOL_LEVELS")"
+      --levels "$POOL_LEVELS")"
   else
     pool_id="$(deploy_contract pool "$POOL_WASM")"
   fi

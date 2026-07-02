@@ -39,9 +39,6 @@ pub const N_NON_PROOFS: usize = 1;
 /// Number of levels in the ASP membership Merkle tree
 pub const ASP_MEMBERSHIP_LEVELS: u32 = 10;
 
-/// Maximum deposit amount allowed per transaction
-pub const MAX_DEPOSIT: u32 = 1_000_000;
-
 /// Create a test environment that disables snapshot writing under Miri.
 /// Miri's isolation mode blocks filesystem operations, which the Soroban SDK
 /// uses for test snapshots.
@@ -59,7 +56,7 @@ pub fn test_env() -> Env {
     }
 }
 
-/// Returns the path to the pre-generated proving key for the policy_tx_2_2
+/// Returns the path to the canonical testnet proving key for the policy_tx_2_2
 /// circuit. Uses CARGO_MANIFEST_DIR to find the workspace root.
 fn proving_key_path() -> std::path::PathBuf {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -67,7 +64,7 @@ fn proving_key_path() -> std::path::PathBuf {
     manifest_dir
         .parent()
         .expect("Failed to get workspace root")
-        .join("testdata/policy_tx_2_2_proving_key.bin")
+        .join("deployments/testnet/circuit_keys/policy_tx_2_2_proving_key.bin")
 }
 
 /// Addresses of deployed contracts for E2E tests
@@ -104,7 +101,6 @@ pub fn deploy_contracts(env: &Env) -> DeployedContracts {
 
     let asp_non_membership = env.register(ASPNonMembership, (admin.clone(),));
 
-    let max_deposit = U256::from_u32(env, MAX_DEPOSIT);
     let pool = env.register(
         PoolContract,
         (
@@ -113,7 +109,6 @@ pub fn deploy_contracts(env: &Env) -> DeployedContracts {
             verifier_address.clone(),
             asp_membership.clone(),
             asp_non_membership.clone(),
-            max_deposit,
             u32::try_from(LEVELS).expect("Failed to convert LEVELS to u32"),
         ),
     );

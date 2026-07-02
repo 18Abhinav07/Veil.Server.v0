@@ -1,4 +1,4 @@
-use crate::{EncryptionPublicKey, ExtAmount, Field, NotePublicKey};
+use crate::{EncryptionPublicKey, Field, NotePublicKey};
 use serde::{Deserialize, Serialize};
 
 /// Serde helpers for `[u8; 32]` as a `0x`-prefixed 64-hex string.
@@ -50,7 +50,6 @@ pub struct PoolInfo {
     pub merkle_levels: u32,
     pub merkle_current_root_index: Option<u32>,
     pub merkle_next_index: String, //num_bigint::BigUint,
-    pub maximum_deposit_amount: ExtAmount,
     pub merkle_root: Option<Field>,
     pub merkle_capacity: u64,
     pub total_commitments: String, //num_bigint::BigUint,

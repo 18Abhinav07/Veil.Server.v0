@@ -14,7 +14,7 @@ use stellar_xdr::{curr as xdr, curr::ReadXdr};
 
 use types::{
     AspMembership, AspNonMembership, AspNonMembershipProof, ContractConfig, ContractsStateData,
-    ExtAmount, Field, NotePublicKey, PoolInfo, U256,
+    Field, NotePublicKey, PoolInfo,
 };
 
 macro_rules! get_state {
@@ -64,26 +64,6 @@ pub struct PreparedSorobanTx {
 }
 
 impl StateFetcher {
-    fn u256_to_i128_checked(v: U256, what: &'static str) -> Result<i128> {
-        let be = v.to_big_endian();
-
-        // Must fit into 128 bits to be representable as i128.
-        if be[..16].iter().any(|&b| b != 0) {
-            return Err(anyhow!("{what} does not fit into i128"));
-        }
-
-        let mut low_bytes = [0u8; 16];
-        low_bytes.copy_from_slice(&be[16..]);
-        let low = u128::from_be_bytes(low_bytes);
-
-        if low > i128::MAX as u128 {
-            return Err(anyhow!("{what} does not fit into i128"));
-        }
-
-        let value = i128::try_from(low).map_err(|_| anyhow!("{what} does not fit into i128"))?;
-        Ok(value)
-    }
-
     pub fn new(rpc_url: &str, config: &'static ContractConfig) -> Result<Self> {
         Ok(Self {
             client: Client::new(rpc_url)?,
@@ -146,7 +126,6 @@ impl StateFetcher {
                     "Levels",
                     "CurrentRootIndex",
                     "NextIndex",
-                    "MaximumDepositAmount",
                 ],
                 valued_keys: vec![],
             });
@@ -265,16 +244,6 @@ impl StateFetcher {
                 let merkle_capacity = 2u64.pow(merkle_levels);
                 let merkle_next_index =
                     scval_to_u64(get_state!(pool_state, "NextIndex", pool.pool_contract_id)?)?;
-                let maximum_deposit_amount_u256 = scval_to_u256(get_state!(
-                    pool_state,
-                    "MaximumDepositAmount",
-                    pool.pool_contract_id
-                )?)?;
-                let maximum_deposit_amount = ExtAmount::from(Self::u256_to_i128_checked(
-                    maximum_deposit_amount_u256,
-                    "maximum_deposit_amount",
-                )?);
-
                 let pool_info = PoolInfo {
                     ledger: base_latest_ledger,
                     contract_id: pool.pool_contract_id.clone(),
@@ -307,7 +276,6 @@ impl StateFetcher {
                     merkle_levels,
                     merkle_current_root_index,
                     merkle_next_index: merkle_next_index.to_string(),
-                    maximum_deposit_amount,
                     merkle_root,
                     merkle_capacity,
                     total_commitments: merkle_next_index.to_string(),

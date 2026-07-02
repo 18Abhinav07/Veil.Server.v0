@@ -167,8 +167,6 @@ pub(crate) enum DataKey {
     Token,
     /// Address of the ZK proof verifier contract
     Verifier,
-    /// Maximum allowed deposit amount per transaction
-    MaximumDepositAmount,
     /// Map of spent nullifiers (nullifier -> bool)
     Nullifiers,
     /// Address of the ASP Membership contract
@@ -227,7 +225,6 @@ impl PoolContract {
     /// * `verifier` - Address of the ZK proof verifier contract
     /// * `asp_membership` - Address of the ASP Membership contract
     /// * `asp_non_membership` - Address of the ASP Non-Membership contract
-    /// * `maximum_deposit_amount` - Maximum allowed deposit per transaction
     /// * `levels` - Number of levels in the commitment Merkle tree (1-32)
     ///
     /// # Returns
@@ -241,7 +238,6 @@ impl PoolContract {
         verifier: Address,
         asp_membership: Address,
         asp_non_membership: Address,
-        maximum_deposit_amount: U256,
         levels: u32,
     ) -> Result<(), Error> {
         env.storage().persistent().set(&DataKey::Admin, &admin);
@@ -255,9 +251,6 @@ impl PoolContract {
         env.storage()
             .persistent()
             .set(&DataKey::ASPNonMembership, &asp_non_membership);
-        env.storage()
-            .persistent()
-            .set(&DataKey::MaximumDepositAmount, &maximum_deposit_amount);
         env.storage()
             .persistent()
             .set(&DataKey::Nullifiers, &Map::<U256, bool>::new(&env));
@@ -509,13 +502,9 @@ impl PoolContract {
         let token_client = TokenClient::new(env, &token);
         let zero = I256::from_i32(env, 0);
 
-        // Handle deposit if ext_amount > 0
+        // Handle deposit if ext_amount > 0. The only hard amount bounds are
+        // the field/i128 checks needed by the proof and token transfer.
         if ext_data.ext_amount > zero {
-            let deposit_u = U256::from_be_bytes(env, &ext_data.ext_amount.to_be_bytes());
-            let max = Self::get_maximum_deposit(env)?;
-            if deposit_u > max {
-                return Err(Error::WrongExtAmount);
-            }
             let this = env.current_contract_address();
             let amount = Self::i256_to_i128_nonneg(env, &ext_data.ext_amount)?;
             token_client.transfer(&sender, &this, &amount);
@@ -647,14 +636,6 @@ impl PoolContract {
         env.storage()
             .persistent()
             .get(&DataKey::Token)
-            .ok_or(Error::NotInitialized)
-    }
-
-    /// Get the maximum deposit amount
-    fn get_maximum_deposit(env: &Env) -> Result<U256, Error> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::MaximumDepositAmount)
             .ok_or(Error::NotInitialized)
     }
 

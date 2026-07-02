@@ -41,7 +41,6 @@ If you want to try it out:
       --deployer <identity> \                                                            # Must be added in stellar-cli keys
       --asp-levels 10 \                                                                  # Number of levels in the ASP trees
       --pool-levels 10 \                                                                 # Number of levels in the pool Merkle tree
-      --max-deposit 1000000000 \                                                         # Maximum deposit amount (in Stroops)
       --vk-file deployments/testnet/circuit_keys/policy_tx_2_2_vk.json                   # Verification key file
       --pool native:$(stellar contract id asset --asset native --network testnet) \      # XLM pool
       --pool classic:CODE:ISSUE:ASSET_CONTRACT                                           # Stellar Asset Pool
