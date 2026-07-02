@@ -1,154 +1,258 @@
-# Private Payments for Stellar
+# Veil Server
 
-[![Deployment](https://github.com/NethermindEth/stellar-private-payments/actions/workflows/deployment.yml/badge.svg)](https://github.com/NethermindEth/stellar-private-payments/actions/workflows/deployment.yml)
-[![Lint](https://github.com/NethermindEth/stellar-private-payments/actions/workflows/linter.yml/badge.svg)](https://github.com/NethermindEth/stellar-private-payments/actions/workflows/linter.yml)
-[![Build](https://github.com/NethermindEth/stellar-private-payments/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/NethermindEth/stellar-private-payments/actions/workflows/build-and-test.yml)
-[![Dependencies](https://github.com/NethermindEth/stellar-private-payments/actions/workflows/dependency-audit.yml/badge.svg)](https://github.com/NethermindEth/stellar-private-payments/actions/workflows/dependency-audit.yml)
-[![UB](https://github.com/NethermindEth/stellar-private-payments/actions/workflows/ub-detection.yml/badge.svg)](https://github.com/NethermindEth/stellar-private-payments/actions/workflows/ub-detection.yml)
-[![Coverage](https://github.com/NethermindEth/stellar-private-payments/actions/workflows/coverage.yml/badge.svg)](https://github.com/NethermindEth/stellar-private-payments/actions/workflows/coverage.yml)
+Stellar testnet contracts, circuit artifacts, prover API, and relayer for the Veil private USDC wallet.
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=flat&logo=telegram&logoColor=white)](https://t.me/stellar_privacy)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/groups/18809039/)
+## Overview
 
-> [!WARNING]
-> This project is a **Work in progress (WIP)**. It is intended to serve as **a reference implementation** of privacy pools for Stellar. The code has not yet been audited and should not be used in production environments with real assets as of now. The security hardening work is planned.
+This repository contains the on-chain and proof-generation layer used by Veil. It packages the Soroban contracts, Groth16 verifier integration, Circom circuit artifacts, deployment metadata, HTTP prover service, and HTTP relayer service required by the client application.
 
-A privacy-preserving payment system for the Stellar network using zero-knowledge proofs. This implementation enables users to deposit, transfer, and withdraw tokens while maintaining transaction privacy through Groth16 proofs.
+The server supports two active privacy pools:
 
-The system incorporates **Association Set Provider (ASPs)** as a control mechanism to provide illicit activity safeguards through association sets. ASPs maintain membership and non-membership Merkle trees that allow proving whether specific deposits are part of approved or blocked sets, enabling pool operators to enforce administrative controls without compromising user privacy.
+| Pool | Purpose |
+| --- | --- |
+| Wallet pool | Deposits, private sends, note-to-note transfers, batch payouts, and public withdrawals. |
+| Market pool | Market note deposits, private YES/NO positions, payout transfers, claims, and public withdrawals. |
 
-## Features
+The current deployment target is Stellar testnet.
 
-- **Private Payments**: Deposit, transfer, and withdraw tokens without revealing transaction amounts or sender/receiver relationships
-- **Zero-Knowledge Proofs**: Groth16 proofs generated via Circom circuits
-- **Administrative Controls**: ASP-based membership and non-membership proofs for illicit activity safeguards
-- **Browser-Based Proving**: Client-side proof generation using WebAssembly
-- **Stellar Integration**: Built on Soroban smart contracts
+## Current Testnet Deployment
 
-## Demo Application
-The demo application consists on three main parts:
-- **Frontend**: Provides a nice user interface for interacting with the system. 
-- **Circuits**: Where the real zk-magic happens and constraints are defined.
-- **Smart Contracts**: They define the state of the system, and how transactions are processed.
-The Frontend includes the [user-facing part](#transaction-flow) and an example of an [ASP admin page](#asp-admin-page) which will be separated according to roles in the main application
+The canonical source of contract truth is `deployments/testnet/deployments.json`.
 
-If you want to try it out:
+| Component | Value |
+| --- | --- |
+| Network | `testnet` |
+| ASP membership | `CCJAUAGWKBWEWS7CYCRLOHCPY6OTHRV6KXAV4ISCZR5JCYSODSIDLS4J` |
+| ASP membership deployment ledger | `3390579` |
+| ASP non-membership | `CCVNPJO5RUE6GBA4Q2PVKOGNWTULAQR4HSR5KX5ARJ363F6RHGLZ2FB6` |
+| Groth16 verifier | `CA7JDHSEPAO2DIWW4ZW6GAVWUPYSO6ELANBMUMEFZ7TD35WIZ3J7A6TS` |
+| Public key registry | `CDI5633NLCDD3ITPSXTWWLBY3GY5ATI3SCFEJ42UD6E3Z4CKTA3XYQQ7` |
+| Wallet pool | `CDEB3AIFRAGHGPLM24EDHHETSH4Y4L4NAYGSHHW7MQWXUQ65G7LEDBFY` |
+| Wallet pool deployment ledger | `3390591` |
+| Market pool | `CBQ2TULUH6Z2V2JGUSOD2U2G3VUIBJ55XRP3FICJKOETXFXLRBHSH4UW` |
+| Market pool deployment ledger | `3390595` |
+| USDC token contract | `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` |
+| USDC issuer | `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` |
 
-1. Deploy the contracts to a Stellar network:
-    ```bash
-    ./deployments/scripts/deploy.sh <network> \                                          # e.g. testnet
-      --deployer <identity> \                                                            # Must be added in stellar-cli keys
-      --asp-levels 10 \                                                                  # Number of levels in the ASP trees
-      --pool-levels 10 \                                                                 # Number of levels in the pool Merkle tree
-      --vk-file deployments/testnet/circuit_keys/policy_tx_2_2_vk.json                   # Verification key file
-      --pool native:$(stellar contract id asset --asset native --network testnet) \      # XLM pool
-      --pool classic:CODE:ISSUE:ASSET_CONTRACT                                           # Stellar Asset Pool
-    ```
-   If you already have deployed contracts, make sure their addresses are updated in `deployments/testnet/deployments.json`.
+Both pools currently use the depth-10 `policy_tx_2_2` circuit stack. Pool depth, proving key, verifier, contract deployment JSON, prover configuration, relayer configuration, and frontend environment variables must be updated together.
 
-2. Serve frontend
-    ```bash
-      make serve
-    ```
-    Open `http://localhost:8000` in your browser. You might want to open the console (_Shift + Ctrl + I_) to see the logs.
-    You might need to delete the browser cache from previous runs. Go to `Application` -> `Clear storage`.
+## Repository Map
 
+```text
+contracts/                         Soroban contracts
+contracts/pool/                    Main privacy pool contract
+contracts/asp-membership/          ASP membership Merkle tree
+contracts/asp-non-membership/      ASP non-membership tree
+contracts/circom-groth16-verifier/ On-chain Groth16 verifier wrapper
+contracts/public-key-registry/     User public key registry
+circuits/                          Circom circuit build crate
+circuit-keys/                      Circuit key tooling
+services/prover-api/               HTTP proof-generation API
+services/relayer/                  HTTP transaction relayer
+app/crates/core/                   Shared Rust libraries
+deployments/testnet/               Testnet deployment metadata and circuit keys
+deployments/scripts/deploy.sh      Contract deployment script
+e2e-tests/                         Testnet integration tests
+railpack.json                      Railway/Railpack service config
+```
 
-3. The pool is ready to use. But you will need to populate the ASP membership smart contracts with some public keys. You can do it directly from the stellar-cli:
-    ```bash
-    stellar contract invoke --id <CONTRACT_ADDRESS> --source-account <ASP_ADMIN_ACCOUNT> -- insert_leaf --leaf <LEAF_VALUE> # See circuit for leaf format
-    ```
-    Or, directly access `http://localhost:8000/admin.html` and use the UI to add public keys.
-    Please note that the admin UI allows deriving keys for ANY account.
-    But insertion MUST be signed by the ASP admin account.
-    You can add your Freighter account to your Stellar-cli keys with `stellar keys add <NAME_FOR_ACCOUNT> --seed-phrase`.
-    This will prompt you to type your seed phrase and will enable you to deploy contracts with the same account you have on your browser wallet.
+## Architecture
 
+Veil uses a two-input, two-output privacy transaction circuit. A valid transaction proves:
 
-4. Go back to `http://localhost:8000` and try it out!
+- ownership of private input notes,
+- Merkle membership for note commitments,
+- ASP membership or non-membership state,
+- correct nullifier derivation,
+- correct output commitment derivation,
+- balance conservation across inputs, outputs, and public amount,
+- binding to the public pool root and external transaction data.
 
-### Architecture Overview
+The prover API reconstructs pool state, prepares circuit inputs, runs Groth16 proof generation, and returns relay-ready transaction bodies. The relayer simulates those transaction bodies, signs them with the configured relayer key, submits them to Stellar, and returns the transaction result to the caller.
 
-#### Transaction Flow
+## Services
 
-1. **Deposit**: User deposits tokens into the pool, creating a commitment (UTXO). No input notes are spent, creates output notes.
-2. **Withdraw**: User proves ownership of commitments and withdraws tokens. Inputs notes are spent, no output notes are created.
-3. **Transfer**: User spends existing commitments and creates new ones, all done privately.  Input notes are spent, and output notes under a new public key are created.
-4. **Transact**: Enables advanced users with experience on privacy-preserving protocols to generate their own transactions. Spending, creating and transferring notes at will.
+### `prover-api`
 
-#### ASP Admin Page
+The prover service provides proof preparation endpoints used by the frontend and worker:
 
-This is the administrative control panel for managing the **Association Set Provider (ASP)** membership trees. It allows you to:
+- deposit proof preparation,
+- withdrawal proof preparation,
+- private transfer proof preparation,
+- output note key helpers,
+- health checks.
 
-1. **Add/insert public keys** to the ASP membership tree - Controls which public keys are approved
-2. **Manage the exclusion list** - Block specific public keys via the non-membership Merkle tree
-3. **Derive keys** for accounts - Generate derived keys for any account (though insertion must be signed by the ASP admin account)
+Required runtime artifacts:
 
-This provides **illicit activity safeguards** while maintaining user privacy. The ASP membership trees work with the zero-knowledge proofs to prove that deposits either belong to approved accounts or don't belong to blocked accounts—without compromising privacy. To access the ASP Admin Page, go to `http://localhost:8000/admin.html`
+```text
+runtime-artifacts/circuits/policy_tx_2_2.wasm
+runtime-artifacts/circuits/policy_tx_2_2.r1cs
+deployments/testnet/circuit_keys/policy_tx_2_2_proving_key.bin
+deployments/testnet/deployments.json
+```
 
-The admin has the option of toggling the "Admin-Only Leaf Insert", It's enabled by default which restricts only the admin to insert membership leaves but when disabled by the admin, anyone can insert membership leaves.
+### `relayer`
 
-> [!WARNING]
-> Disabling "Admin-Only Leaf Insert" removes the access-control safeguard on the ASP membership tree. Any party will be able to add themselves (or others) to the approved set without admin approval, bypassing the intended illicit-activity safeguards. Only disable this in a controlled demo or testing environment—never in production.
+The relayer exposes:
 
+- `GET /health`
+- `POST /relay`
 
-#### Zero-Knowledge Circuits
+It signs and submits prepared pool transactions using `RELAYER_SECRET`. The relayer secret must remain server-side.
 
-The main transaction circuit proves:
-- Ownership of input UTXOs (knowledge of private keys)
-- Correct nullifier computation (prevents double-spending)
-- Valid Merkle proofs for input commitments
-- Correct output commitment computation
-- Balance conservation (inputs = outputs + public amount)
-- ASP membership/non-membership proofs
+## Environment
 
-#### Smart Contracts
+Use `.env.example` as the local template.
 
-- **Pool**: Main contract handling deposits, transfers, and withdrawals
-- **Circom Groth16 Verifier**: On-chain verification of ZK proofs
-- **ASP Membership**: Merkle tree of approved public keys
-- **ASP Non-Membership**: Sparse Merkle tree for exclusion proofs
+Core runtime:
 
-## Limitations
+```bash
+NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
+STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+PROVER_API_URL=http://localhost:3001
+RELAYER_URL=http://127.0.0.1:3000
+```
 
-As a work-in-progress, this implementation has several limitations:
+Prover API:
 
-- **Stellar Events retention**: The app relies heavily on Stellar events. But RPC nodes only store events for a small retention window (7 days). This means that the demo will not work for users onboarded after 7 days of contract deployment because they couldn't re-play events history. But a user who onboarded within 7 days from the contracts deployment and keeps their app tab open in a browser, can use the app without a reset as the events digestion happens in the background.
-- **Not Audited**: The code has not undergone security audits.
-- **Error Handling**: Error handling may not cover all edge cases.
-- **Browser storage** for the storage the app uses SQLite relying on [OPFS](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system). Basically, the data is stored on the file system as some files with opaque names. Some antiviruses and other software may accidentally delete them. In future versions cloud sync maybe introduced. Also clearing the app site data permanently deletes the app database with app-derived keys and notes.
+```bash
+PROVER_API_LISTEN_ADDR=0.0.0.0:3001
+PROVER_API_STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+PROVER_API_DEPLOYMENTS_PATH=deployments/testnet/deployments.json
+PROVER_API_WASM_PATH=runtime-artifacts/circuits/policy_tx_2_2.wasm
+PROVER_API_R1CS_PATH=runtime-artifacts/circuits/policy_tx_2_2.r1cs
+PROVER_API_PK_PATH=deployments/testnet/circuit_keys/policy_tx_2_2_proving_key.bin
+```
 
+Relayer:
 
-## AI tools disclosure
-The content published here may have been refined/augmented by the use of large language models (LLM), computer programs designed to comprehend and generate human language. However, any output refined/generated with the assistance of such programs has been reviewed, edited and revised by Nethermind.
+```bash
+RELAYER_LISTEN_ADDR=0.0.0.0:3000
+RELAYER_STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+RELAYER_NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
+RELAYER_CONTRACT_CONFIG_PATH=deployments/testnet/deployments.json
+RELAYER_SECRET=...
+```
 
+Pool variables shared with the client:
 
-## License
+```bash
+POOL_ID=CDEB3AIFRAGHGPLM24EDHHETSH4Y4L4NAYGSHHW7MQWXUQ65G7LEDBFY
+NEXT_PUBLIC_POOL_ID=CDEB3AIFRAGHGPLM24EDHHETSH4Y4L4NAYGSHHW7MQWXUQ65G7LEDBFY
+POOL_DEPLOYMENT_LEDGER=3390591
+NEXT_PUBLIC_POOL_DEPLOYMENT_LEDGER=3390591
+MARKET_POOL_ID=veil_market_pool_v1
+MARKET_POOL_CONTRACT_ID=CBQ2TULUH6Z2V2JGUSOD2U2G3VUIBJ55XRP3FICJKOETXFXLRBHSH4UW
+NEXT_PUBLIC_MARKET_POOL_CONTRACT_ID=CBQ2TULUH6Z2V2JGUSOD2U2G3VUIBJ55XRP3FICJKOETXFXLRBHSH4UW
+MARKET_POOL_DEPLOYMENT_LEDGER=3390595
+MARKET_POOL_TREE_DEPTH=10
+```
 
-This repository contains **source code** provided under a mixed license structure (Apache 2.0 and GPLv3).
+Do not commit real secrets.
 
-Most of the source code is licensed under the Apache License, Version 2.0. See `LICENSE` for details.
+## Local Development
 
-The exception is `circuits/build.rs` which is licensed separately under the GNU Lesser General Public License v3.0. See `circuits/LICENSE` for details.
+Build the service binaries:
 
-### Responsibility of Deployers
+```bash
+cargo build -p prover-api -p relayer --release
+```
 
-The `dist/` directory and its contents (including compiled WebAssembly circuits, keys, and bundled JavaScript) are **generated artifacts** produced by the build process. They are not checked into this repository.
+Run contract and service tests:
 
-If you compile, build, or deploy this project (e.g., hosting the `dist/` folder on a web server), **you become the distributor** of those binary artifacts. It is your responsibility to:
-1.  Ensure all generated artifacts comply with their respective licenses (specifically the LGPLv3 requirements for compiled circuits).
-2.  Include the appropriate `LICENSE` and `NOTICE` files in your deployment directory.
-3.  Make the source code available to your end-users as required by the LGPLv3 (if you are distributing the compiled circuits).
+```bash
+cargo test -p pool
+cargo test -p prover-api -p relayer
+```
 
-The maintainers of this repository provide the source code "as is" and assume no responsibility for the downstream builds or deployments.
+Start both backend services:
 
-## Would like to contribute?
+```bash
+bash scripts/railway-start.sh
+```
 
-Please check [the issues](https://github.com/NethermindEth/stellar-private-payments/issues).
-If you're an external contributor, please check the issues with the label `contributors-friendly`.
-See also [Contributing](./CONTRIBUTING.md).
+Default local ports:
 
-## Credit
+| Service | URL |
+| --- | --- |
+| Prover API | `http://127.0.0.1:3001` |
+| Relayer | `http://127.0.0.1:3000` |
 
-Credit goes to Horizen Labs for their [Poseidon2 implementation](https://github.com/HorizenLabs/poseidon2), which is integrated into this repository.
+Health checks:
+
+```bash
+curl http://127.0.0.1:3001/health
+curl http://127.0.0.1:3000/health
+```
+
+## Deployment
+
+Railway uses `railpack.json`.
+
+Build command:
+
+```bash
+cargo build -p prover-api -p relayer --release
+```
+
+Runtime artifacts are copied into:
+
+```text
+runtime-artifacts/bin/prover-api
+runtime-artifacts/bin/relayer
+runtime-artifacts/circuits/policy_tx_2_2.wasm
+runtime-artifacts/circuits/policy_tx_2_2.r1cs
+```
+
+Start command:
+
+```bash
+bash scripts/railway-start.sh
+```
+
+Before pushing backend changes:
+
+1. Confirm `deployments/testnet/deployments.json` contains the intended contracts.
+2. Run `cargo test -p pool`.
+3. Run `cargo test -p prover-api -p relayer`.
+4. Run `cargo build -p prover-api -p relayer --release`.
+5. Confirm Railway variables match the deployment JSON.
+
+## Contract Deployment
+
+Use `deployments/scripts/deploy.sh` for fresh testnet deployments.
+
+The current pool contract does not require a maximum deposit constructor argument.
+
+Typical deployment shape:
+
+```bash
+./deployments/scripts/deploy.sh testnet \
+  --deployer <stellar-cli-identity> \
+  --asp-levels 10 \
+  --pool-levels 10 \
+  --vk-file deployments/testnet/circuit_keys/policy_tx_2_2_vk.json \
+  --pool classic:USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5:CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
+```
+
+After deployment:
+
+1. Update `deployments/testnet/deployments.json`.
+2. Update backend service variables.
+3. Update frontend pool variables.
+4. Rerun backend tests.
+5. Rerun frontend deployment checks.
+6. Redeploy backend before frontend.
+
+## Security Notes
+
+- This is testnet infrastructure and should not be treated as audited custody software.
+- `RELAYER_SECRET`, ASP admin secrets, and market escrow private keys must remain server-side.
+- Circuit proving keys and verifier contracts must stay in sync.
+- If a circuit or proving key is regenerated, redeploy the verifier and pool contracts before using the new artifacts.
+- Pool privacy does not hide public entry and exit transactions. Deposits and withdrawals remain visible on Stellar.
+
+## Related Repositories
+
+- Client app, wallet UI, market UI, worker, and app API routes: `Veil.Client.v0`
+- Server contracts, prover API, relayer, and deployment metadata: `Veil.Server.v0`
