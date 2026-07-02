@@ -1,6 +1,6 @@
 # Veil Server
 
-Stellar testnet contracts, circuit artifacts, prover API, and relayer for the Veil private USDC wallet.
+Stellar testnet contracts, circuit artifacts, prover API, and relayer for the Veil private USDC payments.
 
 ## Overview
 
